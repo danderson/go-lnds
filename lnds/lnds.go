@@ -20,7 +20,7 @@
 //
 // The exact implementation is not guaranteed to remain the same, but
 // at present it uses the algorithm discovered by Fredman [1] and
-// Knuth [2, Algorithm I]. At its core, it's the Schensted insertion
+// Knuth [2]. At its core, it's the Schensted insertion
 // algorithm [3], stripped down and with additional optimizations
 // suitable for execution by a computer, rather than a mathematician.
 //
@@ -32,120 +32,170 @@
 // ubiquitous around the internet and in textbooks, but I've been
 // unable to track down their originator.
 //
-// [1]: Michael L. Fredman, "On computing the length of longest
-//      increasing subsequences", Discrete Mathematics, vol. 54, issue
-//      1, pp. 29-35. Available: https://doi.org/10.1016/0012-365X(75)90103-X
-// [2]: Donald E. Knuth, "The Art of Computer Programming", vol. 3,
-//      section 5.1.4, Algorithm I
-// [3]: Craige Schensted, “Longest Increasing and Decreasing
-//      Subsequences,” Canadian Journal of Mathematics, vol. 13,
-//      pp. 179–191, 1961. Available: https://doi:10.4153/CJM-1961-015-3
+// [1]: Michael L. Fredman, "On computing the length of longest increasing subsequences", Discrete Mathematics, vol. 54, issue 1, pp. 29-35. Available: https://doi.org/10.1016/0012-365X(75)90103-X
+// [2]: Donald E. Knuth, "The Art of Computer Programming", vol. 3, section 5.1.4, Algorithm I
+// [3]: Craige Schensted, “Longest Increasing and Decreasing Subsequences,” Canadian Journal of Mathematics, vol. 13, pp. 179–191, 1961. Available: https://doi:10.4153/CJM-1961-015-3
 package lnds
 
 import "slices"
 
-func PartitionUnsorted[E any](lst []E, cmp func(E, E) int) (sorted, notSorted []E) {
-	st := state[E]{
-		cmp:   cmp,
-		elts:  lst,
-		tails: make([]int, 1, len(lst)),
-		prev:  make([]int, len(lst)),
+// LNDS computes a longest non-decreasing subsequence of vs, whose
+// elements must be totally ordered by cmp.
+func LNDS[T any, Slice ~[]T](lst Slice, cmp func(T, T) int) (sorted, rest Slice) {
+	// Editorial note: "longest non-decreasing subsequence" is a
+	// mouthful, so the comments in this function omit
+	// "non-decreasing" and just say "subsequence" or "longest
+	// subsequence". This is unambiguous since we don't handle any
+	// subsequences other than the non-decreasing kind.
+	//
+	// The algorithm's core is a loop over every element of lst. Each
+	// element we consider can be the beginning of a new subsequence
+	// of length 1, and may be a valid extension of some previously
+	// found subsequences. Conceptually, the loop is constructing this
+	// vast tree of all possible valid subsequences, and then picks
+	// one of the longest to return.
+	//
+	// However, this would be quite inefficient. Thankfully there are
+	// four optimizations we can apply. Leaving proofs of their
+	// correctness to the literature, they are:
+	//
+	//   - Each element only gets to participate in creating the
+	//     longest subsequences it can, we discard all shorter
+	//     options. It might still participate in many subsequences of
+	//     that length, but that brings us to...
+	//   - We only need to remember one subsequence of every length,
+	//     the one whose final element is the smallest. This is the
+	//     tails array, and means that every new element will
+	//     contribute to exactly 0 or 1 subsequence of interest.
+	//   - Elements always appear in the tails array in sorted order,
+	//     so we can use a binary search to find the one subsequence
+	//     that a new element might contribute to. This gets us
+	//     O(log(n)) time per element, instead of O(n).
+	//   - Successive non-decreasing new elements always contribute to
+	//     the longest currently known subsequence, which is the final
+	//     entry of tails. If we check for this trivial case before
+	//     embarking on the binary search, elements that appear in
+	//     non-decreasing order can be processed in O(1) time rather
+	//     than O(log(n)).
+
+	var (
+		// tails[L] is the index into lst for the final element of a
+		// subsequence of length L. If several such subsequences
+		// exist, tails keeps whichever has the smallest final
+		// element, according to cmp.
+		tails = make([]int, 1, len(lst))
+
+		// prev[i] is the index into lst for the element that comes
+		// before lst[i] in a subsequence tracked by tails, or -1 if
+		// lst[i] is the first in a subsequence. It's effectively the
+		// pointers for the linked lists whose first elements are
+		// tracked in tails.
+		//
+		// tails by itself only gives us the length of the longest
+		// subsequence, and its final element. prev is the additional
+		// state we need to reconstruct the entire subsequence.
+		//
+		// prev[i]'s value is only valid if lst[i] is part of a
+		// subsequence currently being tracked in tails.
+		prev = make([]int, len(lst))
+	)
+
+processElement:
+	for i := range lst {
+		if i == 0 {
+			// The rest of this loop is cleaner if it can assume that
+			// i-1 exists. This handles the initial edge case.
+			prev[0] = -1
+			tails[0] = 0
+			continue
+		}
+
+		idxOfBestTail := len(tails) - 1
+		if cmp(lst[i], lst[idxOfBestTail]) >= 0 {
+			// Fast path: the i-th element extends the currently known
+			// longest subsequence.
+			prev[i] = idxOfBestTail
+			tails = append(tails, i)
+			continue
+		}
+
+		// Otherwise, the i-th element can only produce a shorter
+		// subsequence. Figure out what length, and whether this new
+		// subsequence is better than the one tails already knew
+		// about.
+		//
+		// TODO: a custom BinarySearch implementation could bias
+		// towards the last matching element, rather than the first.
+		replaceIdx, found := slices.BinarySearchFunc(tails[:len(tails)-1], i, func(i, j int) int {
+			return cmp(lst[i], lst[j])
+		})
+		if found {
+			// lst has equal elements, and we've just found one. In a
+			// non-decreasing subsequence, we can chain the equal
+			// elements together, but slices.BinarySearchFunc gave us
+			// the index of the _first_ occurrence of the equal
+			// element. Scan forward to go one past the _last_
+			// occurrence.
+			for {
+				replaceIdx++
+				switch cmp(lst[replaceIdx], lst[i]) {
+				case 0:
+					continue
+				case +1:
+					break // new element is better than what tails has
+				case -1:
+					continue processElement // new element is worse than what tails has
+				}
+			}
+		}
+		// The new element is extending the subsequence tracked in
+		// replaceIdx-1, replacing the previous best extension that
+		// was stored in replaceIdx. We have to deal with the edge
+		// case of the single-element subsequence.
+		if replaceIdx == 0 {
+			prev[i] = -1
+		} else {
+			prev[i] = tails[replaceIdx-1]
+		}
+		tails[replaceIdx] = i
 	}
-	return st.run()
-}
 
-type state[E any] struct {
-	cmp   func(E, E) int
-	elts  []E
-	tails []int
-	prev  []int
-}
+	// We can now iterate back through the longest subsequence and
+	// partition the input.
+	sorted = make([]E, len(tails))
+	rest = make([]E, len(lst)-len(tails))
+	var (
+		seqIdx    = tails[len(tails)-1] // current longest subsequence element
+		allIdx    = len(lst) - 1        // current input element
+		sortedIdx = len(sorted) - 1
+		restIdx   = len(rest) - 1
+	)
+output:
+	for {
+		for seqIdx == allIdx {
+			sorted[sortedIdx] = lst[seqIdx]
+			seqIdx = prev[seqIdx]
+			allIdx--
+			sortedIdx--
 
-func (st *state[E]) run() (sorted, unsorted []E) {
-	for i := range st.elts {
-		st.process(i)
-	}
+			if allIdx < 0 {
+				break output
+			}
+		}
 
-	if len(st.tails) == len(st.elts) {
-		// Input was already sorted.
-		return st.elts, nil
-	}
+		// We fell out of the previous loop because seqIdx jumped
+		// ahead of allIdx, indicating one or more elements that
+		// aren't part of the longest subsequence.
+		for seqIdx < allIdx {
+			rest[restIdx] = lst[allIdx]
+			allIdx--
+			restIdx--
 
-	return st.result()
-}
-
-func (st *state[E]) process(newIdx int) {
-	if newIdx == 0 {
-		st.prev[0] = -1
-		st.tails[0] = 0
-		return
-	}
-
-	curBestIdx := st.tails[len(st.tails)-1]
-	if st.cmp(st.elts[newIdx], st.elts[curBestIdx]) >= 0 {
-		// Fast path: can extend the current longest sequence.
-		st.prev[newIdx] = curBestIdx
-		st.tails = append(st.tails, newIdx)
-		return
-	}
-
-	replaceIdx, found := slices.BinarySearchFunc(st.tails, newIdx, st.eltIdxCmp)
-	if found {
-		// TODO: make my own binary search instead, that selects the
-		// largest equal element if found=true.
-		for {
-			replaceIdx++
-			switch st.eltIdxCmp(replaceIdx, newIdx) {
-			case 0:
-				continue
-			case +1:
-				// newIdx is a better tail for this length subsequence.
-				break
-			case -1:
-				// existing idx is a better tail, newIdx is not part of a
-				// worthy subsequence.
-				return
+			if allIdx < 0 {
+				break output
 			}
 		}
 	}
-	if replaceIdx == 0 {
-		st.prev[newIdx] = -1
-	} else {
-		st.prev[newIdx] = st.tails[replaceIdx-1]
-	}
-	st.tails[replaceIdx] = newIdx
-}
 
-func (st *state[E]) eltIdxCmp(a, b int) int {
-	return st.cmp(st.elts[a], st.elts[b])
-}
-
-func (st *state[E]) result() (sorted, unsorted []E) {
-	sorted = make([]E, len(st.tails))
-	unsorted = make([]E, len(st.elts)-len(st.tails))
-
-	seqIdx := st.tails[len(st.tails)-1] // current element of LIS
-	allIdx := len(st.elts) - 1          // current input element
-	sortedIdx := len(sorted) - 1        // next write position into sorted
-	unsortedIdx := len(unsorted) - 1    // next write position into unsorted
-
-	for allIdx >= 0 {
-		for allIdx >= 0 && seqIdx == allIdx {
-			sorted[sortedIdx] = st.elts[seqIdx]
-			seqIdx = st.prev[seqIdx]
-			allIdx--
-			sortedIdx--
-		}
-
-		// Did we fall out of the previous loop because seqIdx jumped
-		// away from allIdx? That means there are unsorted elements to
-		// output.
-		for seqIdx < allIdx {
-			unsorted[unsortedIdx] = st.elts[allIdx]
-			allIdx--
-			unsortedIdx--
-		}
-	}
-
-	return sorted, unsorted
+	return sorted, rest
 }
