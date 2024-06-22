@@ -40,10 +40,6 @@
 // [3]: Craige Schensted, “Longest Increasing and Decreasing Subsequences,” Canadian Journal of Mathematics, vol. 13, pp. 179–191, 1961. Available: https://doi:10.4153/CJM-1961-015-3
 package lis
 
-import (
-	"slices"
-)
-
 // LIS computes a longest increasing subsequence of vs, whose elements
 // must be totally ordered by cmp.
 func LIS[T any, Slice ~[]T](lst Slice, cmp func(T, T) int) (sorted, rest Slice) {
@@ -109,7 +105,6 @@ func LIS[T any, Slice ~[]T](lst Slice, cmp func(T, T) int) (sorted, rest Slice) 
 		prev = make([]int, len(lst))
 	)
 
-processElement:
 	for i := range lst {
 		if i == 0 {
 			// The rest of this loop is cleaner if it can assume that
@@ -133,29 +128,14 @@ processElement:
 		// subsequence is better than the one tails already knew
 		// about.
 		//
-		// TODO: a custom BinarySearch implementation could bias
-		// towards the last matching element, rather than the first.
-		replaceIdx, found := slices.BinarySearchFunc(tails[:len(tails)-1], i, func(i, j int) int {
-			return cmp(lst[i], lst[j])
+		// Note we run the search over tails minus its final element,
+		// which might save one bisection. It doesn't change the
+		// outcome since the fast path eliminated the "beyond the end
+		// of tails" edge case.
+		replaceIdx := bisectRight(tails[:len(tails)-1], lst[i], func(idx int, target T) int {
+			return cmp(lst[idx], target)
 		})
-		if found {
-			// lst has equal elements, and we've just found one. In a
-			// non-decreasing subsequence, we can chain the equal
-			// elements together, but slices.BinarySearchFunc gave us
-			// the index of the _first_ occurrence of the equal
-			// element. Scan forward to go one past the _last_
-			// occurrence.
-			for {
-				replaceIdx++
-				if r := cmp(lst[tails[replaceIdx]], lst[i]); r == 0 {
-					continue
-				} else if r > 0 {
-					break // new element is better than what tails has
-				} else {
-					continue processElement // new element is worse than what tails has
-				}
-			}
-		}
+
 		// The new element is extending the subsequence tracked in
 		// replaceIdx-1, replacing the previous best extension that
 		// was stored in replaceIdx. We have to deal with the edge
@@ -206,4 +186,26 @@ output:
 	}
 
 	return sorted, rest
+}
+
+// bisectRight returns the position where target should be inserted in
+// a sorted slice. If target is already present in the slice, the
+// returned position is one past the final existing occurrence.
+//
+// This is effectively a right-leaning variant of
+// slices.BinarySearch. It doesn't return a found bool, since by
+// definition it will never return an index equivalent to target.
+func bisectRight[T, U any, Slice ~[]T](vs Slice, target U, cmp func(T, U) int) (idx int) {
+	ln := len(vs)
+	low, high := uint(0), uint(ln)
+	for low < high {
+		mid := (low + high) / 2
+		if cmp(vs[mid], target) > 0 {
+			high = mid
+		} else {
+			low = mid + 1
+		}
+	}
+	ret := int(low)
+	return ret
 }

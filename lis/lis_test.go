@@ -68,6 +68,13 @@ func TestLIS(t *testing.T) {
 			wantSorted: []int{1, 3, 5, 7},
 			wantRest:   []int{2, 4, 6, 8},
 		},
+		{
+			name: "run_of_equals",
+			// swapped_pairs with more 3s sprinkled in.
+			in:         []int{2, 1, 3, 4, 3, 6, 3, 5, 8, 3, 7},
+			wantSorted: []int{1, 3, 3, 3, 3, 7},
+			wantRest:   []int{2, 4, 6, 5, 8},
+		},
 	}
 
 	for _, tc := range tests {
@@ -81,6 +88,8 @@ func TestLIS(t *testing.T) {
 			}
 			if t.Failed() {
 				t.Logf("Input was: %v", tc.in)
+				t.Logf("Got: %v, %v", gotSorted, gotRest)
+				t.Logf("Want: %v, %v", tc.wantSorted, tc.wantRest)
 			}
 		})
 	}
