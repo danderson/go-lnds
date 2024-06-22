@@ -1,19 +1,22 @@
-// Package lnds computes the Longest Non-Decreasing Subsequence (LNDS)
-// of a slice of comparable items. Put simply: given a list, this
-// package tells you which elements have to be removed, in order for
-// the remaining shorter list to be correctly sorted.
+// Package lis computes the longest increasing subsequence (LIS) of a
+// slice of comparable items. Put simply: given a list, this package
+// tells you which elements have to be removed, in order for the
+// remaining shorter list to be correctly sorted.
 //
-// LNDS is a minor extension of the better known Longest Increasing
-// Subsequence (LIS) algorithm. The only difference is that increasing
-// subsequences cannot contain equal elements, whereas nondecreasing
-// subsequences can.
+// Pedantically, this package finds the longest non-decreasing
+// subsequence, which does not require that every element compares
+// greater-than the previous, only that it must not compare
+// less-than. Opinions vary on whether LIS should mean only "strictly
+// increasing", or whether it encompasses non-decreasing unless
+// strictness is explicitly specified. This package makes the
+// pragmatic choice to use the better known term.
 //
 // Increasing and nondecreasing subsequence algorithms are also
-// closely related to sorting algorithms. You could think of LNDS as a
+// closely related to sorting algorithms. You could think of LIS as a
 // sort function that instead of sorting the input just tells you
 // which elements need to move elsewhere in the list.
 //
-// LNDS's time complexity is comparable to that of sorting algorithms:
+// LIS's time complexity is comparable to that of sorting algorithms:
 // for an input of length n, it takes O(n·logn) time in the worst
 // case, Θ(n) for the best case of an already sorted list, and
 // O(n·logn) in the average case.
@@ -24,24 +27,30 @@
 // algorithm [3], stripped down and with additional optimizations
 // suitable for execution by a computer, rather than a mathematician.
 //
-// The references above specify an algorithm for longest increasing
-// subsequence, and only compute the length of the subsequence. This
-// package makes the minor extensions necessary to support equal
-// elements, and to track enough state to produce the full
-// subsequence. These are not original extensions, and in fact are
-// ubiquitous around the internet and in textbooks, but I've been
-// unable to track down their originator.
+// The references above specify an algorithm for longest strictly
+// increasing subsequence, and only compute the length of the
+// subsequence. This package makes the minor extensions necessary to
+// allow for non-decreasing elements, and to track enough state to
+// produce the full subsequence. These are not original extensions,
+// and in fact are ubiquitous around the internet and in textbooks,
+// but I've been unable to track down their originator.
 //
 // [1]: Michael L. Fredman, "On computing the length of longest increasing subsequences", Discrete Mathematics, vol. 54, issue 1, pp. 29-35. Available: https://doi.org/10.1016/0012-365X(75)90103-X
 // [2]: Donald E. Knuth, "The Art of Computer Programming", vol. 3, section 5.1.4, Algorithm I
 // [3]: Craige Schensted, “Longest Increasing and Decreasing Subsequences,” Canadian Journal of Mathematics, vol. 13, pp. 179–191, 1961. Available: https://doi:10.4153/CJM-1961-015-3
-package lnds
+package lis
 
-import "slices"
+import (
+	"slices"
+)
 
-// LNDS computes a longest non-decreasing subsequence of vs, whose
-// elements must be totally ordered by cmp.
-func LNDS[T any, Slice ~[]T](lst Slice, cmp func(T, T) int) (sorted, rest Slice) {
+// LIS computes a longest increasing subsequence of vs, whose elements
+// must be totally ordered by cmp.
+func LIS[T any, Slice ~[]T](lst Slice, cmp func(T, T) int) (sorted, rest Slice) {
+	if len(lst) == 0 {
+		return nil, nil
+	}
+
 	// Editorial note: "longest non-decreasing subsequence" is a
 	// mouthful, so the comments in this function omit
 	// "non-decreasing" and just say "subsequence" or "longest
@@ -110,7 +119,7 @@ processElement:
 			continue
 		}
 
-		idxOfBestTail := len(tails) - 1
+		idxOfBestTail := tails[len(tails)-1]
 		if cmp(lst[i], lst[idxOfBestTail]) >= 0 {
 			// Fast path: the i-th element extends the currently known
 			// longest subsequence.
@@ -138,12 +147,11 @@ processElement:
 			// occurrence.
 			for {
 				replaceIdx++
-				switch cmp(lst[replaceIdx], lst[i]) {
-				case 0:
+				if r := cmp(lst[tails[replaceIdx]], lst[i]); r == 0 {
 					continue
-				case +1:
+				} else if r > 0 {
 					break // new element is better than what tails has
-				case -1:
+				} else {
 					continue processElement // new element is worse than what tails has
 				}
 			}
@@ -162,8 +170,8 @@ processElement:
 
 	// We can now iterate back through the longest subsequence and
 	// partition the input.
-	sorted = make([]E, len(tails))
-	rest = make([]E, len(lst)-len(tails))
+	sorted = make([]T, len(tails))
+	rest = make([]T, len(lst)-len(tails))
 	var (
 		seqIdx    = tails[len(tails)-1] // current longest subsequence element
 		allIdx    = len(lst) - 1        // current input element

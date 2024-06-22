@@ -1,0 +1,4 @@
+github.com/creachadair/mds v0.14.7 h1:VkY1pop2sqIfbDEeB9FObh/STRd/DNHyNtlE55Z95UQ=
+github.com/creachadair/mds v0.14.7/go.mod h1:4vrFYUzTXMJpMBU+OA292I6IUxKWCCfZkgXg+/kBZMo=
+github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
+github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
